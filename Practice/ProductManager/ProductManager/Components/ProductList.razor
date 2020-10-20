@@ -1,0 +1,34 @@
+﻿@using Microsoft.AspNetCore.Components.Web
+@using ProductManager.Models
+@using ProductManager.Services
+@inject JsonFileProductService ProductService
+
+<div class="card-columns">
+    @foreach (var product in ProductService.GetProducts())
+    {
+        <div class="card">
+            <div class="card-img" style="background-image:url('@product.Image');"></div>
+            <div class="card-body">
+                <h5 class="card-title">Name : @product.Name</h5>
+            </div>
+            <div class="card-footer">
+                <h5 class="card-title">Price: $@product.Price</h5>
+            </div>
+        </div>
+        
+    }
+</div>
+
+
+@code {
+    Product selectedProduct;
+    string selectedProductId;
+
+    void SelectProduct(string productId)
+    {
+        selectedProductId = productId;
+        selectedProduct = ProductService.GetProducts().First(x => x.Id == productId);
+    }
+
+}
+

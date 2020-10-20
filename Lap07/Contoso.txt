@@ -1,0 +1,274 @@
+Như cô
+1.Create project ASP.NER MVC Core
+2.Add data folder (wwwroot) ==> product.json
+3.Add Models folder ==> Product.cs
+	public string Id { get; set; }
+        public string Maker { get; set; }
+
+        [JsonPropertyName("img")]
+        public string Image { get; set; }
+
+        public string Url  { get; set; }
+        public string Title { get; set; }
+        public string Description { get; set; }
+        public int[] Ratings { get; set; }
+
+        public override string ToString() =>
+            JsonSerializer.Serialize<Product>(this);
+- Chứa các thuộc tính có trong file dữ liệu product.json.       
+4. Tạo tệp "Service" thêm file "JsonFileProductsServices.cs":
+=> Trích xuất dữ lệu
+public class JsonFileProductService
+    {
+        public JsonFileProductService(IWebHostEnvironment webHostEnvironment)  => Tạo hàm để gọi dữ liệu
+        {
+            WebHostEnvironment = webHostEnvironment; 
+        }
+
+        public IWebHostEnvironment WebHostEnvironment { get; }
+
+        private string JsonFileName {
+            get { return Path.Combine(WebHostEnvironment.WebRootPath, "data", "products.json"); } 
+        }
+
+        public IEnumerable<Product> GetProducts()
+        {
+            using(var jsonFileReader = File.OpenText(JsonFileName))
+            {
+                return JsonSerializer.Deserialize<Product[]>(jsonFileReader.ReadToEnd(),
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+        }
+
+        public void AddRating(string productId, int rating)
+        {
+            var products = GetProducts();
+
+            //LINQ
+            var query = products.First(x => x.Id == productId);
+            if (query.Ratings == null)
+            {
+                query.Ratings = new int[] { rating };
+            }
+            else
+            {
+                var ratings = query.Ratings.ToList();
+                ratings.Add(rating);
+                query.Ratings = ratings.ToArray();
+            }
+
+            using(var outputStream = File.OpenWrite(JsonFileName))
+            {
+                JsonSerializer.Serialize<IEnumerable<Product>>(
+                    new Utf8JsonWriter(outputStream, new JsonWriterOptions
+                    {
+                        SkipValidation = true,
+                        Indented = true
+                    }),
+                    products
+                );
+            }
+        }
+    }
+
+5. "Startup.cs":
+
+public void ConfigureServices(IServiceCollection services)
+        {
+            services.AddRazorPages();
+            services.AddServerSideBlazor();
+            services.AddControllers();
+            services.AddTransient<JsonFileProductService>();
+        }
+
+...
+
+app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapRazorPages();
+                endpoints.MapControllers();
+                endpoints.MapBlazorHub();
+            });
+
+6. "Pages/Index.cshtml.cs":
+
+public class IndexModel : PageModel
+    {
+        private readonly ILogger<IndexModel> _logger;
+        public JsonFileProductService ProductService;
+        public IEnumerable<Product> Products { get; private set; }
+
+        public IndexModel(ILogger<IndexModel> logger,
+            JsonFileProductService productService)
+        {
+            _logger = logger;
+            ProductService = productService;
+        }
+
+        public void OnGet()
+        {
+            Products = ProductService.GetProducts();
+        }
+    }
+
+7. "Page/Index.cshtml":
+
+@(await Html.RenderComponentAsync<ProductList>(RenderMode.ServerPrerendered))
+
+<script src="_framework/blazor.server.js"></script>
+
+8. Sửa file "wwwroot/css/site.css"
+
+9. "Pages/Shared/_Layout.cshtml":
+
+ ~ bg-white  chuyển thành bg-navbar:
+
+<nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-navbar border-bottom box-shadow mb-3">
+
+10. Tạo tệp "Controllers" thêm file "ProductsController.cs":
+
+[Route("[controller]")]
+    [ApiController]
+    public class ProductsController : ControllerBase
+    {
+        public ProductsController(JsonFileProductService productService)
+        {
+            this.ProductService = productService;
+        }
+
+        public JsonFileProductService ProductService { get; }
+
+        [HttpGet]
+        public IEnumerable<Product> Get()
+        {
+            return ProductService.GetProducts();
+        }
+
+        //[HttpPatch] "[FromBody"]
+        [Route("Rate")]
+        [HttpGet]
+        public ActionResult Get(
+            [FromQuery] string ProductId,
+            [FromQuery] int Rating)
+        {
+            ProductService.AddRating(ProductId, Rating);
+            return Ok();
+        }
+    }
+
+11. Tạo tệp "Components" thêm file "ProductList.razor":
+
+@using Microsoft.AspNetCore.Components.Web
+@using ContosoCrafts.WebSite.Models
+@using ContosoCrafts.WebSite.Services
+@inject JsonFileProductService ProductService
+
+<div class="card-columns">
+    @foreach (var product in ProductService.GetProducts())
+    {
+        <div class="card">
+            <div class="card-img" style="background-image:url('@product.Image');"></div>
+            <div class="card-body">
+                <h5 class="card-title">@product.Title</h5>
+            </div>
+        </div>
+        <div class="card-footer">
+            <small class="text-muted">
+                <button @onclick="(e => SelectProduct(product.Id))"
+                        data-toggle="modal" data-target="#productModal" class="btn btn-primary">
+                    More Info
+                </button>
+            </small>
+        </div>
+    }
+</div>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+
+@if (selectedProduct != null)
+{
+    <div class="modal fade" id="productModal" tabindex="-1" role="dialog" aria-labelledby="productTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="productTitle">@selectedProduct.Title</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="card">
+                        <div class="card-img" style="background-image: url('@selectedProduct.Image');">
+                        </div>
+                        <div class="card-body">
+                            <p class="card-text">@selectedProduct.Description</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    @if (voteCount == 0)
+                    {
+                        <span>Be the first to vote!</span>
+                    }
+                    else
+                    {
+                        <span>@voteCount @voteLabel</span>
+                    }
+
+                    @for (int i = 0; i < 6; i++)
+                    {
+                        var currentStar = i;
+                        if (i <= currentRating)
+                        {
+                            <span class="fa-star fa checked" @onclick="(e=>SubmitRating(currentStar))"></span>
+                        }
+                        else
+                        {
+                            <span class="fa-star fa" @onclick="(e=>SubmitRating(currentStar))"></span>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    Product selectedProduct;
+    string selectedProductId;
+
+    void SelectProduct(string productId)
+    {
+        selectedProductId = productId;
+        selectedProduct = ProductService.GetProducts().First(x => x.Id == productId);
+        GetCurrentRating();
+    }
+
+    int currentRating = 0;
+    int voteCount = 0;
+    string voteLabel;
+
+    void GetCurrentRating()
+    {
+        if (selectedProduct.Ratings == null)
+        {
+            currentRating = 0;
+            voteCount = 0;
+        }
+        else
+        {
+            voteCount = selectedProduct.Ratings.Count();
+            voteLabel = voteCount > 1 ? "Votes" : "Vote";
+            currentRating = selectedProduct.Ratings.Sum() / voteCount;
+        }
+
+        System.Console.WriteLine($"Current rating for {selectedProduct.Id}:{currentRating}");
+    }
+
+    void SubmitRating(int rating)
+    {
+        System.Console.WriteLine($"Rating received for {selectedProduct.Id}: {rating}");
+        ProductService.AddRating(selectedProductId, rating);
+        SelectProduct(selectedProductId);
+    }
+}
